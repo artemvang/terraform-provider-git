@@ -1,6 +1,6 @@
 # Terraform Provider for Git
 
-![](https://github.com/innovationnorway/terraform-provider-git/workflows/test/badge.svg)
+![](https://github.com/artemvang/terraform-provider-git/workflows/test/badge.svg)
 
 ## Requirements
 
