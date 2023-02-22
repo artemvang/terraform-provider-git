@@ -10,21 +10,14 @@
 ## Usage
 
 ```hcl
-provider "git" {}
+provider "git" {
+  private_key = file("key.pem")
+}
 
 data "git_repository" "example" {
-  path = path.root
+  url = var.repo_url
 }
 
-resource "azurerm_resource_group" "example" {
-  ...
-
-  tags = {
-    branch = data.git_repository.example.branch
-    commit = substr(data.git_repository.example.commit_sha, 0, 7)
-    tag    = data.git_repository.example.tag
-  }
-}
 ```
 
 ## Contributing

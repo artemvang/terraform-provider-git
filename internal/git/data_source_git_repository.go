@@ -3,7 +3,10 @@ package git
 import (
 	"context"
 
-	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -14,100 +17,68 @@ func dataSourceGitRepository() *schema.Resource {
 		ReadContext: dataSourceGitRepositoryRead,
 
 		Schema: map[string]*schema.Schema{
-			"path": {
-				Type:         schema.TypeString,
-				Optional:     true,
-				ValidateFunc: validation.StringIsNotEmpty,
-				DefaultFunc:  schema.EnvDefaultFunc("GIT_DIR", nil),
-			},
-
 			"url": {
 				Type:         schema.TypeString,
-				Optional:     true,
-				Computed:     true,
 				ValidateFunc: validation.StringIsNotEmpty,
-				ExactlyOneOf: []string{"path", "url"},
+				Required:     true,
 			},
-
-			"branch": {
-				Type:         schema.TypeString,
-				Optional:     true,
-				Computed:     true,
-				ValidateFunc: validation.StringIsNotEmpty,
-			},
-
-			"tag": {
-				Type:          schema.TypeString,
-				Optional:      true,
-				Computed:      true,
-				ValidateFunc:  validation.StringIsNotEmpty,
-				ConflictsWith: []string{"branch"},
-			},
-
-			"commit_sha": {
-				Type:     schema.TypeString,
+			"refs": {
+				Type:     schema.TypeList,
 				Computed: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"sha": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"name": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+					},
+				},
 			},
 		},
 	}
 }
 
 func dataSourceGitRepositoryRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	m := meta.(*Meta)
+	conf := meta.(*Config)
 
-	params := RepoParams{
-		Auth: m.Auth,
-	}
+	URL := d.Get("url").(string)
 
-	if v, ok := d.GetOk("url"); ok {
-		params.URL = v.(string)
-	}
+	rem := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{URL},
+	})
 
-	if v, ok := d.GetOk("path"); ok {
-		params.Path = v.(string)
-	}
-
-	if v, ok := d.GetOk("branch"); ok {
-		params.Ref = plumbing.NewBranchReferenceName(v.(string))
-	}
-
-	if v, ok := d.GetOk("tag"); ok {
-		params.Ref = plumbing.NewTagReferenceName(v.(string))
-	}
-
-	repo, err := getRepo(params)
+	publicKey, err := ssh.NewPublicKeys(ssh.DefaultUsername, []byte(conf.PrivateKey), "")
 	if err != nil {
-		return diag.Errorf("unable to get repository: %s", err)
+		return diag.FromErr(err)
 	}
 
-	ref, err := getRef(repo, params.Ref)
+	refs, err := rem.List(&git.ListOptions{
+		InsecureSkipTLS: conf.InsecureSkipTLSVerify,
+		Auth:            publicKey,
+	})
 	if err != nil {
-		return diag.Errorf("unable to get reference: %s", err)
+		return diag.FromErr(err)
 	}
 
-	if params.URL == "" {
-		d.Set("url", getRemoteURL(repo))
-	}
-
-	if ref.Name().IsBranch() {
-		d.Set("branch", ref.Name().Short())
-	}
-
-	if ref.Name().IsTag() {
-		d.Set("tag", ref.Name().Short())
-	} else {
-		tags, err := getTags(repo, ref)
-		if err != nil {
-			return diag.Errorf("unable to get tags: %s", err)
-		}
-
-		if tags != nil {
-			d.Set("tag", getLatestTag(tags))
+	var references []map[string]interface{}
+	if len(refs) != 0 {
+		for _, ref := range refs {
+			if ref.Name().IsBranch() || ref.Name().IsTag() {
+				references = append(references, map[string]interface{}{
+					"sha":  ref.Hash().String(),
+					"name": ref.Name().Short(),
+				})
+			}
 		}
 	}
 
-	d.Set("commit_sha", ref.Hash().String())
-	d.SetId(ref.Name().String())
+	d.Set("refs", references)
+	d.SetId(URL)
 
 	return nil
 }
