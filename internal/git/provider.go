@@ -28,6 +28,12 @@ func Provider() *schema.Provider {
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("GIT_SKIP_TLS_VERIFY", false),
 			},
+
+			"ignore_host_key": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("GIT_IGNORE_HOST_KEY", false),
+			},
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
@@ -41,6 +47,7 @@ func Provider() *schema.Provider {
 func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
 	config := &Config{
 		PrivateKey:            d.Get("private_key").(string),
+		InsecureIgnoreHostKey: d.Get("ignore_host_key").(bool),
 		InsecureSkipTLSVerify: d.Get("skip_tls_verify").(bool),
 	}
 

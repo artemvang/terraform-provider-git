@@ -3,13 +3,14 @@ package git
 import (
 	"context"
 
-	"github.com/go-git/go-git/v5"
+	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
+	"golang.org/x/crypto/ssh"
 )
 
 func dataSourceGitRepository() *schema.Resource {
@@ -52,9 +53,15 @@ func dataSourceGitRepositoryRead(ctx context.Context, d *schema.ResourceData, me
 		URLs: []string{URL},
 	})
 
-	publicKey, err := ssh.NewPublicKeys(ssh.DefaultUsername, []byte(conf.PrivateKey), "")
+	publicKey, err := gitssh.NewPublicKeys(gitssh.DefaultUsername, []byte(conf.PrivateKey), "")
 	if err != nil {
 		return diag.FromErr(err)
+	}
+
+	if conf.InsecureIgnoreHostKey {
+		publicKey.HostKeyCallbackHelper = gitssh.HostKeyCallbackHelper{
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		}
 	}
 
 	refs, err := rem.List(&git.ListOptions{
